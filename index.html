@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>리니지W</title>
+</head>
+
+<body>   
+    <canvas id="canvas" style="border:1px solid black"></canvas>
+    <br>
+    <div style="background-color:#F6CECE">
+        <img src="https://tistory1.daumcdn.net/tistory/4442313/skin/images/donation.png" style="float:left; margin-right:15px" style="float:left">
+        <h3><주의사항></h3>
+        <li>개발중인 버전입니다. 응원하고 싶다면 커피 후원!</li>
+        <li>보드연결 > 캡처시작 > 창 > 리니지W 게임창 선택 후 공유</li>
+        <li>게임창이 활성화 되어야 입력이 들어갑니다.</li>
+        <li>가방열기 클릭 후 3초안에 게임창을 활성화(클릭)해 작동을 확인합니다.</li>
+        <li>게임창이 다른 화면에 조금이라도 가려지면 인식되지 않습니다.</li>
+        <li>Ctrl+S를 눌러 .html 로 저장하면 서버가 다운되도 사용 가능합니다.</li>
+    </div>
+    <br>
+    <video id="video" style="display:none" autoplay></video>
+</body>
+<script src="https://cdn.jsdelivr.net/npm/tweakpane@3.0.7/dist/tweakpane.min.js"></script>
+<script
+    src="https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.1.4/dist/tweakpane-plugin-essentials.min.js"></script>
+<!--script src="https://cdn.jsdelivr.net/npm/tweakpane-image-plugin@1.1.3/dist/tweakpane-image-plugin.min.js"></script-->
+<script>
+    //리니지W 설정-정보-내 캐릭터 정보 숨김 필요
+    const params = {
+        hpx: 45,
+        hpy: 16,
+        hpw: 95,
+        hph: 1,
+        mpx: 45,
+        mpy: 23,
+        mpw: 95,
+        mph: 1,
+        hpp: 0,
+        mpp: 0,
+        info: "앱을 시작합니다.",
+        pause: false,
+        arduino: false,
+        homeUse: false,
+        homeRange: { min: 0, max: 40 },
+        homeKey: "8",
+        homeKeyCount: 2,
+        homeKeyDelay: 0.2,
+        homeCool: 120,
+        homeInCool: false,
+        tellUse: false,
+        tellRange: { min: 40, max: 60 },
+        tellKey: "7",
+        tellCool: 5,
+        tellInCool: false,
+        timer1Use: false,
+        timer1HPRange: { min: 0, max: 100 },
+        timer1MPRange: { min: 0, max: 100 },
+        timer1Key: "3",
+        timer1Cool: 5,
+        timer1InCool: false,
+        timer2Use: false,
+        timer2HPRange: { min: 0, max: 100 },
+        timer2MPRange: { min: 0, max: 100 },
+        timer2Key: "4",
+        timer2Cool: 5,
+        timer2InCool: false,
+    }
+    let port, reader, writer;
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const video = document.getElementById("video");
+    // const canvas = document.createElement("canvas");
+    const canvas = document.getElementById("canvas");
+    const canvasHP = document.createElement("canvas");
+    const canvasMP = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const ctxHP = canvasHP.getContext("2d");
+    const ctxMP = canvasMP.getContext("2d");
+    canvas.width = 640;
+    canvas.height = 360;
+    canvasHP.width = params.hpw;
+    canvasHP.height = params.hph;
+    canvasMP.width = params.mpw;
+    canvasMP.height = params.mph;
+
+    const pprint = (msg) => {
+        params.info += "\n" + msg;
+    }
+
+    const connect = async () => {
+        try {
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 9600 });
+            reader = port.readable.getReader();
+            writer = port.writable.getWriter();
+            params.arduino = true;
+            pprint("보드가 연결되었습니다.");
+        } catch (err) {
+            console.error("Error: " + err);
+            params.arduino = false;
+        }
+    }
+
+    const send = (data) => {
+        pprint("Send: " + data);
+        console.log("Send: " + data);
+        if (params.arduino) {
+            const dataArrayBuffer = encoder.encode(data);
+            writer.write(dataArrayBuffer);
+        } else {
+            pprint("아두이노를 연결하세요.");
+        }
+    }
+
+    const startCapture = async () => {
+        const displayMediaOptions = { video: { cursor: "always" }, audio: false };
+        try {
+            video.srcObject = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+            pprint("캡처를 시작합니다.");
+            pprint(video.srcObject.getTracks()[0].label);
+            loop();
+        } catch (err) {
+            console.error("Error: " + err);
+        }
+    }
+
+    const stopCapture = () => {
+        try {
+            let tracks = video.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+            setTimeout(() => { ctx.clearRect(0, 0, canvas.width, canvas.height) }, 33);
+        } catch (err) {
+            console.error("Error: " + err);
+        }
+    }
+
+    const imgProcessing = () => {
+        const hpData = ctxHP.getImageData(0, 0, params.hpw, params.hph).data;
+        const hp = [];
+        // R색상만 추출하고, threshold값을 적용한다.
+        for (let i = 0; i < hpData.length; i += 4) {
+            const value = (hpData[i] > 210) ? hp.push(255) : hp.push(0);
+        }
+        let hpIndex = hp.reverse().indexOf(255);
+        hpIndex = hpIndex < 0 ? 0 : hpIndex;
+        params.hpp = Math.round((hp.length - hpIndex) / hp.length * 100);
+
+        const mpData = ctxMP.getImageData(0, 0, params.mpw, params.mph).data;
+        const mp = []
+        // B색상만 추출하고, threshold값을 적용한다.
+        for (let i = 0; i < mpData.length; i += 4) {
+            const value = (mpData[i + 2] > 110) ? mp.push(255) : mp.push(0);
+            mp.push(value);
+        }
+        let mpIndex = mp.reverse().indexOf(255);
+        mpIndex = mpIndex < 0 ? 0 : mpIndex;
+        params.mpp = Math.round((mp.length - mpIndex) / mp.length * 100);
+        pane.children[1].label = `체력: ${params.hpp}%`;
+        pane.children[2].label = `마나: ${params.mpp}%`;
+    }
+
+    const saveFile = (content, fileName, contentType) => {
+        var a = document.createElement("a");
+        var file = new Blob([content], { type: contentType });
+        a.href = URL.createObjectURL(file);
+        a.download = fileName;
+        a.click();
+    }
+
+    const loop = () => {
+        ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height);
+        ctxHP.drawImage(canvas, params.hpx, params.hpy, params.hpw, params.hph, 0, 0, params.hpw, params.hph);
+        ctxMP.drawImage(canvas, params.mpx, params.mpy, params.mpw, params.mph, 0, 0, params.mpw, params.mph);
+        imgProcessing();
+
+        if (params.pause == false) {
+            // 귀환
+            if (params.homeUse) {
+                if (params.hpp >= params.homeRange.min && params.hpp <= params.homeRange.max) {
+                    for (let i = 1; i <= params.homeKeyCount; i++) {
+                        setTimeout(() => send(params.homeKey), i * params.homeKeyDelay * 1000);
+                    }
+                    if (params.homeCool > 0) {
+                        params.pause = true;
+                        setTimeout(() => {
+                            params.pause = false;
+                            pane.refresh();
+                        }, params.homeCool * 1000);
+                    } else {
+                        params.homeUse = false;
+                    }
+                    pane.refresh();
+                }
+            }
+
+            // 순간이동
+            if (params.tellUse) {
+                if (params.hpp >= params.tellRange.min && params.hpp <= params.tellRange.max && params.tellInCool == false) {
+                    send(params.tellKey);
+                    params.tellInCool = true;
+                    setTimeout(() => { params.tellInCool = false }, params.tellCool * 1000);
+                }
+            }
+
+            // 타이머1
+            if (params.timer1Use) {
+                if (params.hpp >= params.timer1HPRange.min && params.hpp <= params.timer1HPRange.max && params.mpp >= params.timer1MPRange.min && params.mpp <= params.timer1MPRange.max && params.timer1InCool == false) {
+                    send(params.timer1Key);
+                    params.timer1InCool = true;
+                    setTimeout(() => { params.timer1InCool = false }, params.timer1Cool * 1000);
+                }
+            }
+
+            // 타이머2
+            if (params.timer2Use) {
+                if (params.hpp >= params.timer2HPRange.min && params.hpp <= params.timer2HPRange.max && params.mpp >= params.timer2MPRange.min && params.mpp <= params.timer2MPRange.max && params.timer2InCool == false) {
+                    send(params.timer2Key);
+                    params.timer2InCool = true;
+                    setTimeout(() => { params.timer2InCool = false }, params.timer2Cool * 1000);
+                }
+            }
+        }
+        setTimeout(loop, 300);
+    }
+
+    // const pane = new Tweakpane.Pane({ title: "MANDLOH", container: document.getElementById("container") });
+    const pane = new Tweakpane.Pane({ title: "MANDLOH" });
+    pane.registerPlugin(TweakpaneEssentialsPlugin);
+    //pane.registerPlugin(TweakpaneImagePlugin);
+    pane.addBlade({
+        view: "buttongrid",
+        size: [3, 1],
+        cells: (x) => ({
+            title: (x == 0) ? "보드연결" : (x == 1) ? "캡처시작" : "가방열기",
+        }),
+    }).on("click", (ev) => {
+        if (ev.index[0] == 0) connect();
+        else if (ev.index[0] == 1) startCapture();
+        else {
+            pprint("3초 후 가방을 엽니다.");
+            pprint("게임창을 선택하세요.");
+            setTimeout(() => send("i"), 3000);
+        }
+    });
+
+    pane.addMonitor(params, "hpp", {
+        view: "graph",
+        label: "체력:",
+        lineCount: 1,
+        min: 0,
+        max: 100
+    });
+
+    pane.addMonitor(params, "mpp", {
+        view: "graph",
+        label: "마나:",
+        lineCount: 1,
+        min: 0,
+        max: 100
+    });
+    pane.addMonitor(params, "info", { label: "메시지", multiline: true, lineCount: 3 });
+    const settingFolder = pane.addFolder({ title: "설정" });
+    settingFolder.addBlade({
+        view: "buttongrid",
+        size: [2, 1],
+        cells: (x) => ({
+            title: (x == 0) ? "저장하기" : "불러오기",
+        }),
+    }).on("click", (ev) => {
+        if (ev.index[0] == 0) {
+            const preset = pane.exportPreset();
+            saveFile(JSON.stringify(preset), "user.json", "text/plain");
+            pprint("user.json 저장 완료.");
+        }
+        else {
+            const loader = document.createElement("input");
+            loader.type = "file";
+            loader.onchange = (evt) => {
+                const input = evt.target;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const data = reader.result;
+                    pane.importPreset(JSON.parse(data));
+                    pprint("불러오기 완료.");
+                }
+                reader.readAsText(input.files[0]);
+            }
+            loader.click();
+        }
+    });
+    settingFolder.addInput(params, "pause", { label: "일시정지" });
+    const homeFolder = settingFolder.addFolder({ title: "자동 귀환", expanded: false });
+    homeFolder.addInput(params, "homeUse", { label: "사용" });
+    homeFolder.addInput(params, "homeRange", { label: "구간(HP)", min: 0, max: 100, step: 1 });
+    homeFolder.addInput(params, "homeKey", { label: "사용 키" });
+    homeFolder.addInput(params, "homeCool", { label: "쿨타임" });
+    homeFolder.addInput(params, "homeKeyCount", { label: "반복입력 횟수", step: 1 });
+    homeFolder.addInput(params, "homeKeyDelay", { label: "반복입력 딜레이", step: 0.1 });
+
+    const tellFolder = settingFolder.addFolder({ title: "자동 순간이동", expanded: false });
+    tellFolder.addInput(params, "tellUse", { label: "사용" });
+    tellFolder.addInput(params, "tellRange", { label: "구간(HP)", min: 0, max: 100, step: 1 });
+    tellFolder.addInput(params, "tellKey", { label: "사용 키" });
+    tellFolder.addInput(params, "tellCool", { label: "쿨타임", step: 1 });
+
+    const timer1Folder = settingFolder.addFolder({ title: "타이머1", expanded: false });
+    timer1Folder.addInput(params, "timer1Use", { label: "사용" });
+    timer1Folder.addInput(params, "timer1HPRange", { label: "구간(HP)", min: 0, max: 100, step: 1 });
+    timer1Folder.addInput(params, "timer1MPRange", { label: "구간(MP)", min: 0, max: 100, step: 1 });
+    timer1Folder.addInput(params, "timer1Key", { label: "사용 키" });
+    timer1Folder.addInput(params, "timer1Cool", { label: "쿨타임", step: 1 });
+
+    const timer2Folder = settingFolder.addFolder({ title: "타이머2", expanded: false });
+    timer2Folder.addInput(params, "timer2Use", { label: "사용" });
+    timer2Folder.addInput(params, "timer2HPRange", { label: "구간(HP)", min: 0, max: 100, step: 1 });
+    timer2Folder.addInput(params, "timer2MPRange", { label: "구간(MP)", min: 0, max: 100, step: 1 });
+    timer2Folder.addInput(params, "timer2Key", { label: "사용 키" });
+    timer2Folder.addInput(params, "timer2Cool", { label: "쿨타임", step: 1 });
+</script>
+
+</html>
