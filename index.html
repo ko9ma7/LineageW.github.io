@@ -13,11 +13,10 @@
         <h3><주의사항></h3>
         <li>개발중인 버전입니다. 응원하고 싶다면 커피 후원!</li>
         <li>보드연결 > 캡처시작 > 창 > 리니지W 게임창 선택 후 공유</li>
-        <li>게임창이 활성화 되어야 입력이 들어갑니다.</li>
-        <li>가방열기 클릭 후 3초안에 게임창을 활성화(클릭)해 작동을 확인합니다.</li>
         <li>게임창이 다른 화면에 조금이라도 가려지면 인식되지 않습니다.</li>
-        <li>리니지W 설정-정보-내 캐릭터 정보 숨김 ON 해야 HP/MP가 제대로 인식됩니다.</li>
-        <li>Ctrl+S를 눌러 .html 로 저장하면 서버가 다운되도 사용 가능합니다.</li>
+        <li>게임창이 작업표시줄(윈도우 가장 아래) 가장 왼쪽에 오도록 옮겨주세요. win+1을 눌렀을때 활성화 되어야 합니다.</li>
+        <li>새로 적용된 윈도우 선택창은, 키입력을 보내는 창 입니다. 보드 2개이신분은 2캐릭 돌릴 수 있습니다.</li>
+        <li>귀환의 반복입력 딜레이는 0 또는 1보다 크게 설정해야 합니다. 전처럼 0.2초하면 오류가 납니다.</li>
     </div>
     <br>
     <video id="video" style="display:none" autoplay></video>
@@ -46,7 +45,7 @@
         homeRange: { min: 0, max: 40 },
         homeKey: "8",
         homeKeyCount: 2,
-        homeKeyDelay: 0.2,
+        homeKeyDelay: 1,
         homeCool: 120,
         homeInCool: false,
         tellUse: false,
@@ -66,6 +65,7 @@
         timer2Key: "4",
         timer2Cool: 5,
         timer2InCool: false,
+        windowNum: 1,
     }
     let port, reader, writer;
     const encoder = new TextEncoder();
@@ -107,8 +107,10 @@
         pprint("Send: " + data);
         console.log("Send: " + data);
         if (params.arduino) {
+            const activateKey = encoder.encode("active_" + params.windowNum);
+            writer.write(activateKey);
             const dataArrayBuffer = encoder.encode(data);
-            writer.write(dataArrayBuffer);
+            setTimeout(() => writer.write(dataArrayBuffer), 200);
         } else {
             pprint("아두이노를 연결하세요.");
         }
@@ -240,10 +242,21 @@
         if (ev.index[0] == 0) connect();
         else if (ev.index[0] == 1) startCapture();
         else {
-            pprint("3초 후 가방을 엽니다.");
-            pprint("게임창을 선택하세요.");
-            setTimeout(() => send("i"), 3000);
+            send("i");
+            // pprint("3초 후 가방을 엽니다.");
+            // pprint("게임창을 선택하세요.");
+            // setTimeout(() => send("i"), 3000);
         }
+    });
+
+    pane.addInput(params, "windowNum", {
+        options: {
+            "윈도우 1": 1,
+            "윈도우 2": 2,
+            "윈도우 3": 3,
+            "윈도우 4": 4
+        },
+        label: "윈도우"
     });
 
     pane.addMonitor(params, "hpp", {
